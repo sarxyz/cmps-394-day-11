@@ -1,41 +1,79 @@
-# CMPS-394-Day 10
+# CMPS-394-Day 11
 
-## Lab 1: Scanner Setup
-We will be using a series of container scanning tools to identify vulnerabilities in our container images. The first step is to set up these tools on your local machine.
-- Trivy: `docker pull aquasec/trivy:0.69.3`
-    - https://trivy.dev/docs/latest/getting-started/
-    - We are using version 0.69.3 because it is latest and not specifying a version will cause the image not to be found as the Trivy team has removed the latest tag from their repository. Had to dig through GitHub issues to find this information.
-- Grype: `docker pull anchore/grype`
-    - https://oss.anchore.com/docs/guides/vulnerability/getting-started/
-    - https://oss.anchore.com/docs/guides/vulnerability/interpreting-results/#reading-table-output
-- Now, we are going to run this against the alpine image we used last class for the lab
-    - `docker run aquasec/trivy:0.69.3 image nginx:1.29-alpine`
-    - `docker run anchore/grype nginx:1.29-alpine`
-- Notice the difference between what the tools report by default. Add the `--only-fixed` flag to the grype command to see only the vulnerabilities that have fixes available. Now the two tools will report similar results. 
-- All scanning tools have their own features and capabilities, so it is worthwhile to dive into whichever tool customization options you may want in a production environment. Most of these are easily integrated into CI/CD pipelines to automate the scanning process.
+Lab 1: Hello CI
+- Clone the lab repository for this class
+- Follow the quickstart guide: https://docs.github.com/en/actions/get-started/quickstart
+- Push your YAML file, do not add it via GitHub's web interface
+- You should see a green check mark in the "Actions" tab on your repo
 
-## Lab 2: Creating a Hardened Image
-In this lab, we will create a hardened version of the nginx:1.29-alpine and python:3.12-alpine images.
-- We will focus on fixable vulnerabilities first, then take a look at the unfixable ones and see if we can mitigate them in other ways.
-- Start by creating a Dockerfile for each image and doing a container-wide package update (Alpine uses apk for package management).
-- Re-scan the image after the update to see how many vulnerabilities have been fixed (note: you need to specify the image created from your Dockerfile, not the base image).
-- Use the following command for Trivy to scan the image you built (replace the name) as it is running inside a container and needs access to the Docker socket to see the images on your local machine: 
+Lab 2: Frontend & Backend Docker Builds
+- Create a "frontend" folder
+- Create "frontend/index.html:
 ```
-docker run --rm \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v $HOME/Library/Caches:/root/.cache \
-  aquasec/trivy:0.69.3 image my-nginx
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Frontend App</title>
+</head>
+<body>
+  <h1>Hello from the frontend!</h1>
+</body>
+</html>
 ```
-- Use this for Grype. Same concept:
+- Create "frontend/Dockerfile"
 ```
-docker run --rm \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  anchore/grype my-nginx
+FROM nginx:alpine
+COPY index.html /usr/share/nginx/html/index.html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
 ```
-- By the end, you should have no fixable vulnerabilities in the images.
+- Create a "backend" folder
+- Create "backend/main.go"
+```
+package main
 
-## Assignment: Hardened Dockerfiles
-Use the dockerfiles you have been using for the last few assignments, scan them with the tools we used today (and others if you feel so inclined), and create hardened versions of those images.
-- When scanning with Trivy and Grype (with the --only-fixed flag), you should have no fixable vulnerabilities in your images.
+import (
+	"fmt"
+	"net/http"
+)
 
-Piep waz hear! 
+func main() {
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "Hello, World from Go backend!")
+	})
+
+	fmt.Println("Starting server at :8080")
+	http.ListenAndServe(":8080", nil)
+}
+```
+- Create "backend/Dockerfile"
+```
+FROM golang:alpine AS builder
+WORKDIR /app
+COPY . .
+RUN go build -o app
+
+FROM alpine
+WORKDIR /app
+COPY --from=builder /app/app ./app
+EXPOSE 8080
+CMD ["./app"]
+```
+- Now, write a frontend and backend github workflow (separate files, preferably) to build the containers and test that they are working
+- LLMs are good at getting you started given a detailed prompt
+    - NOTE: The LLM will likely use the "actions/checkout" and "docker/setup-buildx-action" vendor actions. Find their repositories and make sure the version it gave you is up to date as it will likely give you the version active at the time of their training data cutoff.
+- Do not blindly copy-paste. If something looks funky or unnecessary to you, figure out why it is needed or omit it
+- By the end, you should have a workflow for both the frontend and backend that:
+    - builds the container
+    - runs the container
+    - verifies that the application has started properly and gives an expected result
+    - shuts down the container
+
+Assignment: Concluding Your Project
+Take the code you have been working on for the last several assignments and send it off with a nice final touch: build pipelines
+- Your frontend container should have a build pipeline
+- Your backend container should have a build pipeline
+    - Note that if starting your backend is dependent on having an active database, you will need to modify the application to either support no database on startup, or have a minimal run mode just for a health check of some kind
+- Bonus: Set up a trivy scan action for both the frontend and backend
